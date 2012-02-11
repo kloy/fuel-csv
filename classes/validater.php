@@ -24,7 +24,8 @@ class Validater {
 		}
 		catch (\Exception $e)
 		{
-			\Cli::error($e->getMessage());
+			// \Cli::error($e->getMessage());
+			\Log::error($e->getMessage());
 			$has_errors = true;
 		}
 		try {
@@ -32,7 +33,8 @@ class Validater {
 		}
 		catch (\Exception $e)
 		{
-			\Cli::error($e->getMessage());
+			// \Cli::error($e->getMessage());
+			\Log::error($e->getMessage());
 			$has_errors = true;
 		}
 
@@ -54,7 +56,8 @@ class Validater {
 			}
 			catch (\Exception $e)
 			{
-				\Cli::error($e->getMessage());
+				// \Cli::error($e->getMessage());
+				\Log::error($e->getMessage());
 				$has_errors = true;
 			}
 			try {
@@ -62,7 +65,8 @@ class Validater {
 			}
 			catch (\Exception $e)
 			{
-				\Cli::error($e->getMessage());
+				// \Cli::error($e->getMessage());
+				\Log::error($e->getMessage());
 				$has_errors = true;
 			}
 		}
