@@ -4,135 +4,210 @@ namespace CSV;
 
 class Validater {
 
-	protected $_csv_errors = array();
-	protected $_escaping_errors = array();
 	protected $_file_name = '';
-	protected $_field_correct_count = 0;
-	protected $_csv_field_names = array();
-	protected $_row_count = 0;
 
-	public function __destruct()
+	public function __construct($file_name)
 	{
-		$this->_log_csv_errors($this->_csv_errors);
-		$this->_log_escaping_errors($this->_escaping_errors);
+		$this->_file_name = $file_name;
 	}
 
 	// Check csv file for validity.
 	// Returns true or false.
-	public function check_file($file_name)
+	public function check_file()
 	{
-		echo "Validating {$file_name}...\n";
+		$file_name = $this->_file_name;
+		$has_errors = false;
 
-		$this->_file_name = $file_name;
-
-		Csv::read($file_name, 'read_callback', $this);
-
-		$this->_check_line_count();
-		$this->_check_unicode_characters();
-
-		$row_count = $this->_row_count;
-		echo "{$file_name} is finished being checked with {$row_count} rows read...\n";
-
-		return count($this->_csv_errors) === 0 && count($this->_escaping_errors) === 0
-				? true : false;
-	}
-
-	public function read_callback($csv_row, $row_count)
-	{
-
-		if ($row_count === 1)
+		// Check for file errors.
+		try {
+			static::validate_file_line_count($file_name);
+		}
+		catch (\Exception $e)
 		{
-        	$this->_field_correct_count = count($csv_row);
-        	$this->_csv_field_names = $csv_row;
-        }
-
-        $this->_row_count = $row_count;
-
-        // check that row values matches correct column count
-        $this->_check_csv_column_count($csv_row);
-        $this->_check_escaping($csv_row);
-	}
-
-	protected function _check_escaping($csv_row)
-	{
-		foreach($csv_row as $key => $field)
+			\Cli::error($e->getMessage());
+			$has_errors = true;
+		}
+		try {
+			static::validate_file_unicode_characters($file_name);
+		}
+		catch (\Exception $e)
 		{
-			$regex = "/([^\\\]\")$/";
+			\Cli::error($e->getMessage());
+			$has_errors = true;
+		}
 
-			if (preg_match($regex,$field))
+		// Check for row errors.
+		$file_content = \CSV\File::read($file_name);
+		$is_first = true;
+		$field_names = array();
+		foreach($file_content as $row)
+		{
+			if ($is_first)
 			{
-				$message = "Escaping error for "
-						 . implode(',', $csv_row)
-						 . "\tField: $key";
-				$this->_push_escaping_error($message);
+				$field_names = $row;
+				$is_first = false;
+				continue;
 			}
+
+			try {
+				static::validate_row_column_count($row, $field_names);
+			}
+			catch (\Exception $e)
+			{
+				\Cli::error($e->getMessage());
+				$has_errors = true;
+			}
+			try {
+				static::validate_row_escaped($row, $field_names);
+			}
+			catch (\Exception $e)
+			{
+				\Cli::error($e->getMessage());
+				$has_errors = true;
+			}
+		}
+
+		if ($has_errors)
+		{
+			throw new \Exception("Validating CSV for $file_name failed.");
 		}
 	}
 
-	protected function _check_line_count()
+	/**
+	 * _unihexord
+	 * Unicode version of ord() to return the hex equivalent value
+     * Adapted and improved from php.net docs
+	*/
+	static protected function _unihexord($u)
 	{
-		$file = $this->_file_name;
+		// Make sure the string is properly UTF-8
+		if (!mb_detect_encoding($u,"UTF-8",true))
+		{
+			$u = utf8_encode($u);
+		}
+		// Convert from UTF-8
+		$k = mb_convert_encoding($u, 'UCS-2LE', 'UTF-8');
+		// Get the ord() for each bit
+		$k1 = ord(substr($k, 0, 1));
+		$k2 = ord(substr($k, 1, 1));
+		// Return the upper case paddex hex to 4 characters of the unicode value
+		return str_pad(strtoupper(dechex($k2 * 256 + $k1)),4,0,STR_PAD_LEFT);
+	}
+
+	/**
+	 * Validates file line count
+	 * @param  string $file [description]
+	 */
+	static public function validate_file_line_count($file)
+	{
 		$correct_count = count(file($file));
 		$error_prone_count = trim(preg_replace("/ .*$/","",`wc -l {$file}`));
 
 		if ($correct_count != $error_prone_count)
 		{
-			$message = "Line count mismatch, file {$file} has {$correct_count} but is incorrectly reported by bash and family as having {$error_prone_count}.\n";
-			Logger::error($message);
-			echo $message;
+			$message = "Line count mismatch, file {$file} has {$correct_count} "
+					 . "but is incorrectly reported by bash and family as "
+					 . "having {$error_prone_count}.";
+			throw new \Exception($message);
 		}
 	}
 
-	protected function _check_unicode_characters()
+	/**
+	 * Validate that the file does not have unicode characters
+	 * @param string $file
+	 */
+	static public function validate_file_unicode_characters($file)
 	{
-		Csv_unicode_check::check($this->_file_name);
+		// Define Filters and other stuff
+		$show_line_errors = false;
+		$url = "http://www.fileformat.info/info/unicode/char/{hexcode}/ http://www.decodeunicode.org/u+{hexcode}";
+		$regex_noprint = '/[^[:print:]]/';
+		$regex_cleaner = "/[\n\r\t]+/";
+		$i = 0;
+		$na = array();
+		$errors = array();
+
+		// Validate file exists
+		\CSV\File::validate_file_exists($file);
+
+		// Walk the file CSV Style
+		if ($lines = file($file))
+		{
+			foreach ($lines as $line)
+			{
+				$i++;
+				$n = 0;
+				$clean_line = preg_replace($regex_cleaner,"",$line);
+				if (preg_match_all($regex_noprint,$clean_line,$matches))
+				{
+					foreach ($matches[0] as $match)
+					{
+						$n++;
+						$match = static::_unihexord($match);
+						if (!isset($na[$match])) {
+							$na[$match] = 0;
+						}
+						$na[$match]++;
+					}
+				}
+			}
+		}
+		else
+		{
+			throw new \Exception("The chosen file does not exist.");
+		}
+
+		if (count($na) > 0)
+		{
+			$message = "The chosen file contained the following non-printing character(s):\n";
+
+			foreach ($na as $unihex=>$count)
+			{
+				$turl = str_replace("{hexcode}",$unihex,$url);
+				$message .= "- {$count} count(s) of U+{$unihex}, {$turl}\n";
+			}
+
+			throw new \Exception($message);
+		}
 	}
 
-	protected function _check_csv_column_count($csv_row)
+	/**
+	 * Validate CSV row column count.
+	 * @param  array $csv_row
+	 * @param  array $csv_field_names
+	 */
+	static public function validate_row_column_count($csv_row, $csv_field_names)
 	{
-		if (count($csv_row) !== count($this->_csv_field_names))
+		if (count($csv_row) !== count($csv_field_names))
         {
-			$this->_push_csv_error(implode(',', $csv_row));
+			$row_imploded = implode(', ', $csv_row);
+			$message = "Column mismatch for row:\t$row_imploded.";
+			throw new \Exception($message);
         }
 	}
 
-	protected function _push_csv_error($csv_error = '')
+	/**
+	 * Validates csv row is properly escaped
+	 * @param  array $csv_row
+	 */
+	static public function validate_row_escaped($csv_row)
 	{
-		$this->_csv_errors[] = $csv_error;
-	}
-
-	protected function _push_escaping_error($error = '')
-	{
-		$this->_escaping_errors[] = $error;
-	}
-
-	protected function _log_csv_errors($errors = array())
-	{
-		if (count($errors) > 0)
+		$errors = array();
+		foreach($csv_row as $key => $field)
 		{
-			$file_name = $this->_file_name;
-			$log_filename = Logger::get_filename();
-			echo "\nCSV errors in {$file_name}, check log at {$log_filename}.\n";
-			Logger::error("{$file_name} contains csv errors...");
-			foreach($errors as $csv_error)
+			$regex = "/([^\\\]\")$/";
+			if (preg_match($regex,$field))
 			{
-				Logger::error("\t{$csv_error}\n");
+				$message = "Escaping error for "
+						 . implode(',', $csv_row)
+						 . "\tField: $key";
+				$errors[] = $message;
 			}
 		}
-	}
 
-	protected function _log_escaping_errors($errors = array())
-	{
-		if (count($errors) > 0)
+		if (count($errors))
 		{
-			$file_name = $this->_file_name;
-			$log_filename = Logger::get_filename();
-			echo "\nEscaping errors in {$file_name}, check log at {$log_filename}.\n";
-			Logger::error("{$file_name} contains escaping errors...");
-			foreach($errors as $error)
-			{
-				Logger::error("\t{$error}\n");
-			}
+			throw new \Exception(implode("\n", $errors));
 		}
 	}
 }

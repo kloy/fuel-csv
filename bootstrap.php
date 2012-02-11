@@ -13,6 +13,7 @@
 
 Autoloader::add_classes(array(
     'CSV\\File' => __DIR__.'/classes/file.php',
+    'CSV\\Validater' => __DIR__.'/classes/validater.php',
 ));
 
 /* End of file bootstrap.php */
