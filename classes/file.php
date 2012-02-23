@@ -4,17 +4,46 @@ namespace CSV;
 
 class File {
 
-	static public function read($file)
+	static public function read($file, $as_associative = false)
 	{
-		static::validate_file_exists($file);
+		// static::validate_file_exists($file);
 
 		$data = array();
 		$handle = fopen($file, "r");
-		while (($csv_row = fgetcsv($handle, 1000, ",", '"', '\\')) !== FALSE)
+		$counter = 0;
+		$field_headings = array();
+		while (($csv_row = fgetcsv($handle, 0, ",", '"', '\\')) !== FALSE)
 		{
-			$data[] = $csv_row;
+			if ($counter === 0 and $as_associative === true)
+			{
+				$field_headings = $csv_row;
+				++$counter;
+				continue;
+			}
+			if ($as_associative === true)
+			{
+				$data[] = array_combine($field_headings, $csv_row);
+			}
+			else
+			{
+				$data[] = $csv_row;
+			}
+			// unset($csv_row);
+			// \Cli::write("CSV READ FILE LINE");
+			// $mem = memory_get_usage(true);
+			// $megabytes = round($mem/1048576,2);
+			// $message = "Current memory usage is: $megabytes megabytes";
+			// \Log::info($message);
+			// \Cli::write($message);
 	    }
 		fclose($handle);
+
+		// \Cli::write("CSV READ FILE\t$file");
+		// $mem = memory_get_usage(true);
+		// $megabytes = round($mem/1048576,2);
+		// $message = "Current memory usage is: $megabytes megabytes";
+		// \Log::info($message);
+		// \Cli::write($message);
 
 		return $data;
 	}
@@ -29,6 +58,12 @@ class File {
 			return $csv_row;
 	    }
 
+	    \Cli::write("Get field names");
+		$mem = memory_get_usage(true);
+		$megabytes = round($mem/1048576,2);
+		$message = "Current memory usage is: $megabytes megabytes";
+		\Log::info($message);
+		\Cli::write($message);
 	}
 
 	static public function validate_file_exists($file)
@@ -45,6 +80,13 @@ class File {
 		{
 			fclose($handle);
 		}
+
+		\Cli::write("Validate file exists\t$file");
+		$mem = memory_get_usage(true);
+		$megabytes = round($mem/1048576,2);
+		$message = "Current memory usage is: $megabytes megabytes";
+		\Log::info($message);
+		\Cli::write($message);
 	}
 
 	static public function validate($file)
