@@ -20,6 +20,15 @@ class Validater {
 
 		// Check for file errors.
 		try {
+			static::validate_file_exists($file_name);
+		}
+		catch (\Exception $e)
+		{
+			// \Cli::error($e->getMessage());
+			\Log::error($e->getMessage());
+			$has_errors = true;
+		}
+		try {
 			static::validate_file_line_count($file_name);
 		}
 		catch (\Exception $e)
@@ -98,6 +107,14 @@ class Validater {
 		return str_pad(strtoupper(dechex($k2 * 256 + $k1)),4,0,STR_PAD_LEFT);
 	}
 
+	static public function validate_file_exists($file)
+	{
+		if ( ! is_file($file))
+		{
+			throw new \Exception("$file does not exist.");
+		}
+	}
+
 	/**
 	 * Validates file line count
 	 * @param  string $file [description]
@@ -105,7 +122,8 @@ class Validater {
 	static public function validate_file_line_count($file)
 	{
 		$correct_count = count(file($file));
-		$error_prone_count = trim(preg_replace("/ .*$/","",`wc -l {$file}`));
+		$file = escapeshellarg($file);
+		$error_prone_count = trim(`grep -c . {$file}`);
 
 		if ($correct_count != $error_prone_count)
 		{
@@ -130,9 +148,6 @@ class Validater {
 		$i = 0;
 		$na = array();
 		$errors = array();
-
-		// Validate file exists
-		\CSV\File::validate_file_exists($file);
 
 		// Walk the file CSV Style
 		if ($lines = file($file))
